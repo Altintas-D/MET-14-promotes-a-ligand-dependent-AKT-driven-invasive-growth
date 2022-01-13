@@ -1,0 +1,173 @@
+---
+title: "Viability assay"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggthemes)
+library(tidyverse)
+library(viridis)
+library(ggpubr)
+library(patchwork)
+library(gganimate)
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(av)
+
+setwd("~/Library/Mobile Documents/com~apple~CloudDocs/Lab files/Comoglio/MTT/25112021 WT WTamp d14 d14AMP")
+```
+
+## ## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+
+```{r}
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+  library(plyr)
+  
+  # New version of length which can handle NA's: if na.rm==T, don't count them
+  length2 <- function (x, na.rm=FALSE) {
+    if (na.rm) sum(!is.na(x))
+    else       length(x)
+  }
+  
+  # This does the summary. For each group's data frame, return a vector with
+  # N, mean, and sd
+  datac <- ddply(data, groupvars, .drop=.drop,
+                 .fun = function(xx, col) {
+                   c(N    = length2(xx[[col]], na.rm=na.rm),
+                     mean = mean   (xx[[col]], na.rm=na.rm),
+                     sd   = sd     (xx[[col]], na.rm=na.rm)
+                   )
+                 },
+                 measurevar
+  )
+  
+  # Rename the "mean" column    
+  datac <- rename(datac, c("mean" = measurevar))
+  
+  datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+  
+  # Confidence interval multiplier for standard error
+  # Calculate t-statistic for confidence interval: 
+  # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+  ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+  datac$ci <- datac$se * ciMult
+  
+  return(datac)
+}
+```
+
+### Reading tables
+
+```{r}
+data <- read.table("Results_MTT_25112021_All.txt", header=T, sep="\t", dec=",")
+
+data_sum <- summarySE(data, measurevar="Absorbance", groupvars=c("Treatment","MET_Status", "Time"))
+
+data_sum$MET_Status <- as.factor(data_sum$MET_Status)
+
+mycolours <- c("black","#bf0000", "#0099bf", "#00bf8c")
+
+names_MET <- c(
+  `0` = "MET_WT",
+  `1` = "Delta14",
+  `2` = "WT_Amplified",
+  `3` = "Delta14_Amplified"
+  )
+
+MET.labs <- c("MET_WT", "MET_∆14", "MET_WT_Amplified", "MET_∆14_Amplified")
+names(MET.labs) <- c("WT" , "D14"  ,  "WT_Amp", "D14_Amp")
+
+my_comparisons <- list( c(" - HGF", " + HGF"), c(" - HGF", " + HGF + Tepotinib"), c(" + HGF + Tepotinib", " + HGF + JNJ-38877605") )
+
+
+data_sum %>%
+  mutate(MET_Status = fct_relevel(MET_Status, 
+                                  "WT" , "D14"  ,  "WT_Amp", "D14_Amp")) %>%
+  mutate(isHGF= (Treatment==" + HGF")) %>%
+ggplot(aes(x=Time,y=Absorbance, colour=Treatment)) +
+  geom_point(size=3) + geom_line(aes(linetype=isHGF), alpha=0.8, size=1) + theme_hc() + 
+  facet_wrap(~MET_Status, labeller=labeller(MET_Status=MET.labs)) + 
+  geom_errorbar(aes(ymin=Absorbance-se, ymax=Absorbance+se), width=.1) +
+  scale_linetype_manual(values=c("dashed", "solid"), guide="none") +
+  scale_colour_manual(values=mycolours) +
+  labs(title = "Viability assay in serum-free media", x="Time (Days)", y="Absorbance (570nm)") +
+  theme(
+    strip.text.x = element_text(
+      size = 14, color = "black", face = "bold.italic"
+    ),
+    plot.title=element_text(size = 16, color = "black", face = "bold.italic", hjust = .5),
+    axis.text = element_text(size = 11, color = "#474747"), 
+    axis.title = element_text(size = 13, color = "black")
+  ) 
+
+
+data_sum %>%
+  mutate(MET_Status = fct_relevel(MET_Status, 
+                                  "WT" , "D14"  ,  "WT_Amp", "D14_Amp")) %>%
+  mutate(isHGF= (Treatment==" + HGF")) %>%
+  ggplot(aes(x=Time,y=Absorbance, colour=Treatment)) +
+  geom_smooth(se=F, aes(linetype=isHGF), alpha=0.8, size=1) +
+  geom_errorbar(aes(ymin=Absorbance-se, ymax=Absorbance+se), width=.15) +
+  facet_wrap(~MET_Status, labeller=labeller(MET_Status=MET.labs), scales = "fixed") +
+  theme_hc() + geom_point(size=2) +
+  scale_linetype_manual(values=c("dashed", "solid"), guide="none") +
+  scale_colour_manual(values=mycolours) +
+  labs(title = "Viability assay in serum-free media", x="Time (Days)", y="Absorbance (570nm)", color="Treatments") +
+  theme(
+    strip.text.x = element_text(
+      size = 14, color = "black", face = "bold"),
+    strip.background =element_rect(color="darkgray", fill="#d1e2ff", size=1.5, linetype="solid"),
+    plot.title=element_text(size = 18, color = "black", face = "bold.italic", hjust = .5),
+    axis.text = element_text(size = 11, color = "#474747"), 
+    axis.title = element_text(size = 13, color = "black"),
+    legend.text = element_text(size = 12, color = "black"),
+    legend.title = element_text(size = 13, color = "black", face="bold"),
+    legend.background = element_rect(color="darkgray", fill="#d1e2ff", size=1.5, linetype="solid")
+  ) 
+```
+
+#### Showing WT vs d14
+
+```{r}
+data_sum <- data_sum[data_sum$MET_Status=="WT" | data_sum$MET_Status=="D14",]
+
+MET.labs <- c("wt MET", "MET∆14")
+names(MET.labs) <- c("WT" , "D14")
+
+my_comparisons <- list( c(" - HGF", " + HGF"), c(" - HGF", " + HGF + Tepotinib"), c(" + HGF + Tepotinib", " + HGF + JNJ-38877605") )
+
+fit_wt <- aov(Absorbance ~ Treatment, data=data[data$MET_Status=="WT",]) # y est la variable numérique et A indique les groupes
+summary(fit_wt)
+
+fit_d14 <- aov(Absorbance ~ Treatment, data=data[data$MET_Status=="D14",]) # y est la variable numérique et A indique les groupes
+summary(fit_d14)
+
+
+data_sum %>%
+  mutate(MET_Status = fct_relevel(MET_Status, 
+                                  "WT" , "D14")) %>%
+  mutate(isHGF= (Treatment==" + HGF")) %>%
+ggplot(aes(x=Time,y=Absorbance, colour=Treatment)) +
+  geom_point(size=3) + geom_smooth(se=F, aes(linetype=isHGF), alpha=0.8, size=1) + theme_hc() + 
+  facet_wrap(~MET_Status, labeller=labeller(MET_Status=MET.labs)) + 
+  geom_errorbar(aes(ymin=Absorbance-se, ymax=Absorbance+se), width=.1) +
+  scale_linetype_manual(values=c("dashed", "solid"), guide="none") +
+  scale_colour_manual(values=mycolours) +
+  labs(title = "Viability assay in serum-free media", x="Time (Days)", y="Absorbance (570nm)") +
+  theme(
+    strip.text.x = element_text(
+      size = 14, color = "black", face = "bold"
+    ),
+    plot.title=element_text(size = 16, color = "black", face = "bold.italic", hjust = .5),
+    axis.text = element_text(size = 11, color = "#474747"), 
+    axis.title = element_text(size = 13, color = "black")
+  ) 
+```
+
