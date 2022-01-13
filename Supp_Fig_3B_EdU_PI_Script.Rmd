@@ -1,0 +1,70 @@
+---
+title: "EdU WT vs d14"
+author: "Dogus Altintas"
+date: "1/4/2022"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+
+```
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Supp_Fig_3B_EdU/resultsEdU05112021.csv", header = T, sep=";", dec=",")
+rownames(data) <- data[,1]
+g1 <- data.frame(data$X, data$G0.G1)
+s <- data.frame(data$X, data$S)
+m <- data.frame(data$X, data$G2.M)
+
+colnames(g1) <- c("condition", "values")
+colnames(s) <- c("condition", "values")
+colnames(m) <- c("condition", "values")
+
+data<- rbind(g1, s, m)
+data$cell_cycle <- c(rep("G1/G0", 8), rep("S", 8), rep("G2/M", 8))
+
+data$HGF <- rep(c("0", "1", "10", "100"), 6)
+
+data$MET <- rep(c(rep("WT",4), rep("∆14",4)),3)
+
+data$cell_cycle <- as.factor(data$cell_cycle)
+data$cell_cycle <- fct_relevel(data$cell_cycle, "G2/M", "S", "G1/G0")
+
+data$MET <- as.factor(data$MET)
+data$MET <- fct_relevel(data$MET, "WT")
+
+data$HGF <- as.factor(data$HGF)
+data$HGF <- fct_relevel(data$HGF, "100", "10", "1", "0")
+
+
+```
+
+
+```{r}
+data %>%
+  ggplot(aes(y=values, x=HGF, fill=cell_cycle)) +
+  geom_bar(position = "stack", stat="identity", colour="black") +
+  facet_wrap(~MET, ncol = 1, nrow=2) +
+  coord_flip() + 
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.direction = "horizontal") +
+  scale_fill_manual(values= c("grey", "red", "white")) +
+geom_text(aes(label=round(values,1)),position=position_stack(vjust=.5), 
+          hjust=.5, size=5) +
+  theme(strip.text.x = element_text(size = 15, face="bold"),
+        axis.title = element_text(size=12, face = "bold")) +
+  ylab("% cell cycle") + xlab("HGF (ng/ml)") +
+  labs(fill = "") +
+  theme(
+   strip.background = element_rect(
+     color="black", fill="gray", size=1.5, linetype="solid"
+     )
+   )
+
+  
+```
+
