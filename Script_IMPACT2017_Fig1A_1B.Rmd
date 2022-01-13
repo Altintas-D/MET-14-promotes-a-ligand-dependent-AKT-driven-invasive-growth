@@ -1,0 +1,140 @@
+---
+title: "Script Figure1 A and B, Cerqua et al. 2022"
+output: html_document
+---
+
+```{r}
+library(g3viz)
+library("ggVennDiagram")
+library("ggvenn")
+```
+
+#### Download mutation of MSK-IMPACT from cBioportal
+
+# To list all studies
+all.studies <- cgdsr::getCancerStudies(cgds)
+```{r}
+cgds <- cgdsr::CGDS("http://www.cbioportal.org/")
+cgdsr::test(cgds)
+mutation.dat <- getMutationsFromCbioportal("msk_impact_2017", "MET")
+```
+
+###### Plot options
+
+```{r}
+plot.options <- g3Lollipop.options(
+  # Chart settings
+  chart.width = 800,
+  chart.type = "pie",
+  chart.margin = list(left = 30, right = 20, top = 20, bottom = 30),
+  chart.background = "white",
+  transition.time = 300,
+  # Lollipop track settings
+  lollipop.track.height = 400,
+  lollipop.track.background = "white",
+  lollipop.pop.min.size = 1,
+  lollipop.pop.max.size = 8,
+  lollipop.pop.info.limit = 5.5,
+  lollipop.pop.info.dy = "0.24em",
+  lollipop.pop.info.color = "white",
+  lollipop.line.color = "#a9A9A9",
+  lollipop.line.width = 3,
+  lollipop.circle.color = "#ffdead",
+  lollipop.circle.width = 0.4,
+  lollipop.label.ratio = 2,
+  lollipop.label.min.font.size = 12,
+  lollipop.color.scheme = "dark2",
+  highlight.text.angle = 60,
+  # Domain annotation track settings
+  anno.height = 16,
+  anno.margin = list(top = 0, bottom = 0),
+  anno.background = "#d3d3d3",
+  anno.bar.fill = "#a9a9a9",
+  anno.bar.margin = list(top = 4, bottom = 4),
+  domain.color.scheme = "pie5",
+  domain.margin = list(top = 2, bottom = 2),
+  domain.text.color = "white",
+  domain.text.font = "italic 8px Serif",
+  # Y-axis label
+  y.axis.label = "# of MET gene mutations",
+  axis.label.color = "#303030",
+  axis.label.alignment = "end",
+  axis.label.font = "italic 12px Serif",
+  axis.label.dy = "-1.5em",
+  y.axis.line.color = "#303030",
+  y.axis.line.width = 0.5,
+  y.axis.line.style = "line",
+  y.max.range.ratio = 1.1,
+  # Chart title settings
+  title.color = "#303030",
+  title.text = "MET gene",
+  title.font = "bold 12px monospace",
+  title.alignment = "start",
+  # Chart legend settings
+  legend = TRUE,
+  legend.margin = list(left=20, right = 0, top = 10, bottom = 5),
+  legend.interactive = TRUE,
+  legend.title = "Variant classification",
+  # Brush selection tool
+  brush = TRUE,
+  brush.selection.background = "#F8F8FF",
+  brush.selection.opacity = 0.3,
+  brush.border.color = "#a9a9a9",
+  brush.border.width = 1,
+  brush.handler.color = "#303030",
+  # tooltip and zoom
+  tooltip = TRUE,
+  zoom = TRUE
+)
+```
+
+### Plot the data for mutations hotspot
+
+```{r}
+g3Lollipop(mutation.dat,
+			gene.symbol = "MET",
+			btn.style = "gray", # gray-style chart download buttons
+			plot.options = plot.options,
+			factor.col = "Mutation_Type",
+			output.filename = "cbioportal_theme")
+```
+
+##### Loading copy number alteration data for MET  
+  
+
+```{r}
+cna <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figures-1A-and-1B-cBioPortal/cna_MSK_IMPACT_2017.txt", header = T, sep = "\t", dec=".")
+
+colnames(cna) <- c("Study_ID", "Sample_ID", "MET")
+
+data <- merge(mutation.dat, cna, by="Sample_ID")
+
+data2  <- data[data$Mutation_Type=="Splice_Site",]
+
+data2 <- data2[data2$Protein_Change!="X401_splice",]
+data2 <- data2[data2$Protein_Change!="X621_splice",]
+data2 <- data2[data2$Protein_Change!="X1087_splice",]
+
+
+
+MET_Amplification = cna[cna$MET==2,] 
+No_MET_Amplification = cna[cna$MET==0,]
+MET_Deletion = cna[cna$MET==-2,]
+D14 <- data[data$Mutation_Type=="Splice_Site",]
+
+
+x <- list(
+  MET_Amplification = MET_Amplification[,2], 
+  Delta14 = data2$Sample_ID
+)
+
+names(x) <- c("MET Amplification", "MET∆14") 
+
+ggvenn(x ,
+       fill_color = c("#EFC000FF", "#CD534CFF"), stroke_size = 0.2, set_name_size = 5) + 
+  ggplot2::labs(caption="Source: MSK IMPACT 2017 Dataset", title="MET gene amplification and \nMET∆14 co-occurence") +
+  ggplot2::theme(plot.title=element_text(hjust=.5, size=16, face="bold"),
+                 plot.caption = element_text(size=10, face="italic")) 
+```
+
+			
