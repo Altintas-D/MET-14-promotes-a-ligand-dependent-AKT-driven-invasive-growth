@@ -1,0 +1,136 @@
+---
+title: "Figure_3C_Wound"
+author: "Dogus M Altintas"
+date: "1/14/2022"
+output: html_document
+---
+
+```{r}
+library(tidyr)
+library(ggthemes)
+library(tidyverse)
+library(viridis)
+library(ggpubr)
+library(patchwork)
+library(gganimate)
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(av)
+```
+
+## ## ## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+
+```{r}
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+  library(plyr)
+  
+  # New version of length which can handle NA's: if na.rm==T, don't count them
+  length2 <- function (x, na.rm=FALSE) {
+    if (na.rm) sum(!is.na(x))
+    else       length(x)
+  }
+  
+  # This does the summary. For each group's data frame, return a vector with
+  # N, mean, and sd
+  datac <- ddply(data, groupvars, .drop=.drop,
+                 .fun = function(xx, col) {
+                   c(N    = length2(xx[[col]], na.rm=na.rm),
+                     mean = mean   (xx[[col]], na.rm=na.rm),
+                     sd   = sd     (xx[[col]], na.rm=na.rm)
+                   )
+                 },
+                 measurevar
+  )
+  
+  # Rename the "mean" column    
+  datac <- rename(datac, c("mean" = measurevar))
+  
+  datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+  
+  # Confidence interval multiplier for standard error
+  # Calculate t-statistic for confidence interval: 
+  # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+  ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+  datac$ci <- datac$se * ciMult
+  
+  return(datac)
+}
+```
+
+## Reading tables
+
+```{r}
+data <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure-3C-Wound-Healing/Raw_data_Relative_wound_density.txt", sep="\t", dec=".", quote="", fill = F, header=T, stringsAsFactors = F)
+
+plate <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure-3C-Wound-Healing/Plate_map.txt", sep="\t", dec=".", quote="", fill = F, header=T, stringsAsFactors = F)
+
+
+```
+
+## Arranging data for downstrem analysis
+
+```{r}
+data <- data[,c(1:97)]
+
+data <- pivot_longer(data, cols=2:97, names_to = "Well", values_to = "Values")
+
+data<- left_join(data, plate, by="Well")
+```
+
+## Statistical analysis
+
+```{r}
+data_sum <- summarySE(data, measurevar="Values", groupvars=c("Treatment","MET_Status", "Time"))
+
+my_comparisons <- list( c(" - HGF", " + HGF"), c(" - HGF", " + HGF + Tepotinib"), c(" + HGF + Tepotinib", " + HGF + JNJ-38877605") )
+
+fit_wt <- aov(Values ~ Treatment, data=data[data$MET_Status=="WT",]) # y est la variable numérique et A indique les groupes
+summary(fit_wt)
+
+
+fit_d14 <- aov(Values ~ Treatment, data=data[data$MET_Status=="D14",]) # y est la variable numérique et A indique les groupes
+summary(fit_d14)
+
+fit_wt_amp <- aov(Values ~ Treatment, data=data[data$MET_Status=="WT_Amp",]) # y est la variable numérique et A indique les groupes
+summary(fit_wt_amp)
+
+fit_d14_amp <- aov(Values ~ Treatment, data=data[data$MET_Status=="D14_Amp",]) # y est la variable numérique et A indique les groupes
+summary(fit_d14_amp)
+```
+
+### Plotting the data
+
+```{r}
+MET.labs <- c("wt MET", "MET∆14", "wt MET Amplified", "MET∆14 Amplified")
+names(MET.labs) <- c("WT" , "D14", "WT_Amp", "D14_Amp")
+
+mycolours <- c("black","#bf0000", "#0099bf", "#00bf8c")
+
+data_sum %>%
+  mutate(MET_Status = fct_relevel(MET_Status, 
+                                  "WT" , "D14", "WT_Amp", "D14_Amp")) %>%
+  mutate(isHGF= (Treatment==" + HGF")) %>%
+ggplot(aes(x=Time,y=Values, colour=Treatment)) +
+  geom_point(size=1) + geom_smooth(se=F, aes(linetype=isHGF), alpha=0.8, size=1) + theme_hc() + 
+  facet_wrap(~MET_Status, labeller=labeller(MET_Status=MET.labs)) + 
+  geom_errorbar(aes(ymin=Values-se, ymax=Values+se), width=.1) +
+  scale_linetype_manual(values=c("dashed", "solid"), guide="none") +
+  scale_colour_manual(values=mycolours) +
+  labs(title = "Viability assay in serum-free media", x="Time (Days)", y="Relative Wound Density (%)") +
+  theme(
+    strip.text.x = element_text(
+      size = 14, color = "black", face = "bold"
+    ),
+    plot.title=element_text(size = 16, color = "black", face = "bold.italic", hjust = .5),
+    axis.text = element_text(size = 11, color = "#474747"), 
+    axis.title = element_text(size = 13, color = "black")
+  ) 
+```
+
