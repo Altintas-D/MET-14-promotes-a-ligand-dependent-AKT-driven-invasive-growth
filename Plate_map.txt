@@ -1,0 +1,97 @@
+Well	MET_Status	Treatment
+A1	WT	 - HGF
+A2	WT	 - HGF
+A3	WT	 - HGF
+A4	WT	 - HGF
+A5	WT	 - HGF
+A6	WT	 - HGF
+A7	WT_Amp	 - HGF
+A8	WT_Amp	 - HGF
+A9	WT_Amp	 - HGF
+A10	WT_Amp	 - HGF
+A11	WT_Amp	 - HGF
+A12	WT_Amp	 - HGF
+B1	WT	 + HGF
+B2	WT	 + HGF
+B3	WT	 + HGF
+B4	WT	 + HGF
+B5	WT	 + HGF
+B6	WT	 + HGF
+B7	WT_Amp	 + HGF
+B8	WT_Amp	 + HGF
+B9	WT_Amp	 + HGF
+B10	WT_Amp	 + HGF
+B11	WT_Amp	 + HGF
+B12	WT_Amp	 + HGF
+C1	WT	 + HGF + Tepotinib
+C2	WT	 + HGF + Tepotinib
+C3	WT	 + HGF + Tepotinib
+C4	WT	 + HGF + Tepotinib
+C5	WT	 + HGF + Tepotinib
+C6	WT	 + HGF + Tepotinib
+C7	WT_Amp	 + HGF + Tepotinib
+C8	WT_Amp	 + HGF + Tepotinib
+C9	WT_Amp	 + HGF + Tepotinib
+C10	WT_Amp	 + HGF + Tepotinib
+C11	WT_Amp	 + HGF + Tepotinib
+C12	WT_Amp	 + HGF + Tepotinib
+D1	WT	 + HGF + JNJ-38877605
+D2	WT	 + HGF + JNJ-38877605
+D3	WT	 + HGF + JNJ-38877605
+D4	WT	 + HGF + JNJ-38877605
+D5	WT	 + HGF + JNJ-38877605
+D6	WT	 + HGF + JNJ-38877605
+D7	WT_Amp	 + HGF + JNJ-38877605
+D8	WT_Amp	 + HGF + JNJ-38877605
+D9	WT_Amp	 + HGF + JNJ-38877605
+D10	WT_Amp	 + HGF + JNJ-38877605
+D11	WT_Amp	 + HGF + JNJ-38877605
+D12	WT_Amp	 + HGF + JNJ-38877605
+E1	D14	 - HGF
+E2	D14	 - HGF
+E3	D14	 - HGF
+E4	D14	 - HGF
+E5	D14	 - HGF
+E6	D14	 - HGF
+E7	D14_Amp	 - HGF
+E8	D14_Amp	 - HGF
+E9	D14_Amp	 - HGF
+E10	D14_Amp	 - HGF
+E11	D14_Amp	 - HGF
+E12	D14_Amp	 - HGF
+F1	D14	 + HGF
+F2	D14	 + HGF
+F3	D14	 + HGF
+F4	D14	 + HGF
+F5	D14	 + HGF
+F6	D14	 + HGF
+F7	D14_Amp	 + HGF
+F8	D14_Amp	 + HGF
+F9	D14_Amp	 + HGF
+F10	D14_Amp	 + HGF
+F11	D14_Amp	 + HGF
+F12	D14_Amp	 + HGF
+G1	D14	 + HGF + Tepotinib
+G2	D14	 + HGF + Tepotinib
+G3	D14	 + HGF + Tepotinib
+G4	D14	 + HGF + Tepotinib
+G5	D14	 + HGF + Tepotinib
+G6	D14	 + HGF + Tepotinib
+G7	D14_Amp	 + HGF + Tepotinib
+G8	D14_Amp	 + HGF + Tepotinib
+G9	D14_Amp	 + HGF + Tepotinib
+G10	D14_Amp	 + HGF + Tepotinib
+G11	D14_Amp	 + HGF + Tepotinib
+G12	D14_Amp	 + HGF + Tepotinib
+H1	D14	 + HGF + JNJ-38877605
+H2	D14	 + HGF + JNJ-38877605
+H3	D14	 + HGF + JNJ-38877605
+H4	D14	 + HGF + JNJ-38877605
+H5	D14	 + HGF + JNJ-38877605
+H6	D14	 + HGF + JNJ-38877605
+H7	D14_Amp	 + HGF + JNJ-38877605
+H8	D14_Amp	 + HGF + JNJ-38877605
+H9	D14_Amp	 + HGF + JNJ-38877605
+H10	D14_Amp	 + HGF + JNJ-38877605
+H11	D14_Amp	 + HGF + JNJ-38877605
+H12	D14_Amp	 + HGF + JNJ-38877605
