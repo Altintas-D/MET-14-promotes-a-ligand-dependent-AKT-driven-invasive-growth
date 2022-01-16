@@ -1,0 +1,1213 @@
+---
+title: "Figure 2 D,E,F"
+author: "Dogus Altintas"
+date: "1/10/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+
+```{r}
+
+library(DESeq2)
+library(GenomicFeatures)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(org.Hs.eg.db)
+library(pheatmap)
+library(viridis)
+library(tidyverse)
+library(EnhancedVolcano)
+library(factoextra)
+library('biomaRt')
+library(clusterProfiler)
+library(fgsea)
+library(ggvenn)
+```
+
+##################################### Without removing the batch effect  #####################################
+
+####################################### Create sample info file with genotype and timpoints (h) #######################################
+
+```{r}
+sampleinfo <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/sampleinfo.txt", sep="\t", dec=".", header=T)
+rownames(sampleinfo) <- sampleinfo$sampleid
+sampleinfo$timepoint <- fct_relevel(sampleinfo$timepoint, c("0h", "3h", "6h", "12h"))
+sampleinfo$genotype <- fct_relevel(sampleinfo$genotype, c("WT", "WT_Amp", "delta_14Ex"))
+```
+
+####################################### Preparing counts table ########################################################################
+
+```{r}
+
+wt_counts <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/wt_counts.txt", sep="\t", dec=".", header=T)
+
+d14_counts <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/delta14_counts.txt", sep="\t", dec=".", header=T)
+
+amp_counts <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/wtamp_counts.txt", sep="\t", dec=".", header=T)
+
+### Funny gene names merged with ensembl ids, separate them
+
+wt_counts$ENSEMBL <- gsub(".*:", "", wt_counts$X)
+wt_counts$SYMBOL <- gsub(":.*", "", wt_counts$X)
+
+wt_countsTable <- wt_counts[,c(10,2:9)]
+
+rownames(wt_countsTable) <- wt_countsTable$ENSEMBL
+wt_countsTable <- wt_countsTable[,-1]
+
+
+d14_counts$ENSEMBL <- gsub(".*:", "", d14_counts$X)
+d14_counts$SYMBOL <- gsub(":.*", "", d14_counts$X)
+
+d14_countsTable <- d14_counts[,c(10,2:9)]
+
+rownames(d14_countsTable) <- d14_countsTable$ENSEMBL
+d14_countsTable <- d14_countsTable[,-1]
+
+amp_counts$ENSEMBL <- gsub(".*:", "", amp_counts$X)
+amp_counts$SYMBOL <- gsub(":.*", "", amp_counts$X)
+
+amp_countsTable <- amp_counts[,c(10,2:9)]
+
+rownames(amp_countsTable) <- amp_countsTable$ENSEMBL
+amp_countsTable <- amp_countsTable[,-1]
+
+counts <- merge(wt_countsTable, d14_countsTable, by=0)
+
+rownames(counts) <- counts$Row.names
+counts <- counts[,-1]
+
+counts_all <- merge(counts, amp_countsTable, by=0)
+rownames(counts_all) <- counts_all$Row.names
+counts_all <- counts_all[,-1]
+```
+
+
+###### Running DESeq2
+
+```{r}
+# Check if design ok #
+all(rownames(sampleinfo) == colnames(counts_all))
+
+
+dds_raw <- DESeqDataSetFromMatrix(countData = counts_all,
+								colData=sampleinfo,
+								design=~genotype + timepoint)  ####Batch effect removed
+```
+
+################################ NORMALIZATION ######################################
+
+```{r}
+dds_raw <- estimateSizeFactors(dds_raw)
+dds_raw <- estimateDispersions(dds_raw)
+dds_raw <- nbinomWaldTest(dds_raw)
+
+normalized_counts <- counts(dds_raw, normalized = T)
+```
+
+##################### Unsupervised Clustering analysis ##########################
+# Variant stabilizing transformation, log transformation
+
+```{r}
+vsd <- vst(dds_raw, blind=T)
+#extract matrix
+vsd_mat <- assay(vsd)
+
+# pairwise correlation values
+vsd_cor <- cor(vsd_mat)
+
+annotation <- data.frame(sampleinfo$timepoint,  sampleinfo$genotype)
+
+rownames(annotation) <- colnames(vsd_cor)
+colnames(annotation) <- c("Timepoint", "Genotype")
+
+Timepoint <- viridis(n=4, direction=-1, option="A")
+Cell_line <- viridis(n=3, option="C")
+Genotype <- viridis(n=3, option="D")
+
+names(Timepoint) <- levels(as.factor(sampleinfo$timepoint))
+names(Genotype) <- levels(as.factor(sampleinfo$genotype))
+
+anno_colors <- list(Timepoint=Timepoint, Genotype=Genotype)
+
+		pheatmap(vsd_cor, annotation_col =  annotation, annotation_row=annotation, show_rownames =  F, show_colnames = F, 
+		         main="Correlation Heatmap after normalization", annotation_colors=anno_colors, cutree_rows = 2, cutree_cols = 2)
+				 
+				 
+plotPCA(vsd, intgroup="genotype")
+
+
+
+```
+
+############################# RUN DESEQ2 ###############################################
+ 
+```{r}
+dds <- DESeq(dds_raw)
+ plotDispEsts(dds)
+ 
+ res <- results(dds,
+ 			alpha=.05,
+ 			lfcThreshold = .32
+ 			)
+
+ summary(res)
+
+ 
+ 
+ res_all <- as.data.frame(res) 
+
+ # Select significant genese with padj < 0.05
+
+
+ res_sig <- subset(res_all, padj < 0.05) %>%
+   				data.frame() %>%
+   				rownames_to_column(var = "ensembl")
+				
+ res_sig <- res_sig %>%
+ 	arrange(padj)
+
+ res_sig <- res_sig[!duplicated(res_sig$ensembl),] 	
+```
+ 
+ 
+
+###################### Data Visualisation ####################################
+
+```{r}
+
+
+ sign_norm_counts <- normalized_counts[res_sig$ensembl,]
+
+		EnhancedVolcano(res,
+		                lab = rownames(res),
+		                x = 'log2FoldChange',
+		                y = 'pvalue')	
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- rownames(sign_norm_counts)
+
+symbol <- getBM(attributes=c('hgnc_symbol', 'ensembl_gene_id'), 
+      filters = 'ensembl_gene_id', 
+      values = genes, 
+      mart = mart)
+	  
+	  
+rownames(symbol) <- symbol$ensembl_gene_id
+
+sign_norm_counts2 <- merge(symbol, sign_norm_counts, by=0)	 
+sign_norm_counts2 <- sign_norm_counts2[!duplicated(sign_norm_counts2$hgnc_symbol),]
+
+rownames(sign_norm_counts2) <- sign_norm_counts2$hgnc_symbol
+sign_norm_counts2 <- sign_norm_counts2[,-c(1:3)]
+	  
+
+
+pheatmap(sign_norm_counts2, 
+color= colorRampPalette(c("navy", "white", "red"))(100),
+		scale="row",
+        show_rownames=F,
+        show_colnames=F,
+	 annotation_col =  annotation,
+	 annotation_colors=anno_colors,
+ main="Heatmap of DEG",
+ cutree_cols=2
+		)	
+```
+
+
+############### WT MET ###############
+# wt MET
+
+```{r}
+sampleinfo_wt <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/sampleinfo_WT.txt", sep="\t", dec=".", header=T)
+rownames(sampleinfo_wt) <- sampleinfo_wt$sampleid
+sampleinfo_wt$timepoint <- fct_relevel(sampleinfo_wt$timepoint, c("0h", "3h", "6h", "12h"))
+```
+
+####################################### Preparing WT counts table ########################################################################
+
+```{r}
+wt_counts <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/wt_counts.txt", sep="\t", dec=".", header=T)
+
+### Funny gene names merged with ensembl ids, separate them
+
+wt_counts$ENSEMBL <- gsub(".*:", "", wt_counts$X)
+wt_counts$SYMBOL <- gsub(":.*", "", wt_counts$X)
+
+wt_countsTable <- wt_counts[,c(10,2:9)]
+
+rownames(wt_countsTable) <- wt_countsTable$ENSEMBL
+wt_countsTable <- wt_countsTable[,-1]
+```
+
+############### DESeq2 #############
+
+```{r}
+# Check if design ok #
+all(rownames(sampleinfo_wt) == colnames(wt_countsTable))
+
+dds_raw <- DESeqDataSetFromMatrix(countData = wt_countsTable,
+								colData=sampleinfo_wt,
+								design=~ timepoint)
+```
+
+################################ NORMALIZATION ######################################
+
+```{r}
+dds_raw <- estimateSizeFactors(dds_raw)
+dds_raw <- estimateDispersions(dds_raw)
+dds_raw <- nbinomWaldTest(dds_raw)
+
+normalized_counts <- counts(dds_raw, normalized = T)
+```
+
+##################### Unsupervised Clustering analysis ##########################
+
+```{r}
+# Variant stabilizing transformation, log transformation
+
+vsd <- vst(dds_raw, blind=T)
+#extract matrix
+vsd_mat <- assay(vsd)
+
+# pairwise correlation values
+vsd_cor <- cor(vsd_mat)
+
+annotation <- data.frame(sampleinfo_wt$timepoint, sampleinfo_wt$genotype)
+
+rownames(annotation) <- colnames(vsd_cor)
+colnames(annotation) <- c("Timepoint", "Genotype")
+
+Timepoint <- viridis(n=4, direction=-1, option="A")
+Cell_line <- viridis(n=1, option="C")
+Genotype <- viridis(n=1, option="D")
+
+names(Timepoint) <- levels(as.factor(sampleinfo_wt$timepoint))
+names(Genotype) <- levels(as.factor(sampleinfo_wt$genotype))
+
+anno_colors <- list(Timepoint=Timepoint, Genotype=Genotype)
+
+		pheatmap(vsd_cor, annotation_col =  annotation, annotation_row=annotation, show_rownames =  F, show_colnames = F, 
+		         main="Correlation Heatmap after normalization", annotation_colors=anno_colors)
+				 
+				 
+plotPCA(vsd, intgroup="timepoint")
+```
+
+############################# RUN DESEQ2 ###############################################
+
+```{r}
+ dds <- DESeq(dds_raw)
+ plotDispEsts(dds)
+ 
+ res_wt <- results(dds,
+ 			alpha=.05,
+ 			lfcThreshold = .32
+ 			)
+
+ summary(res_wt)
+
+ 
+ 
+ res_all_wt <- as.data.frame(res_wt) 
+
+ # Select significant genese with padj < 0.1
+
+
+ res_sig_wt <- subset(res_all_wt, padj < 0.1) %>%
+   				data.frame() %>%
+   				rownames_to_column(var = "ensembl")
+				
+ res_sig_wt <- res_sig_wt %>%
+ 	arrange(padj)
+
+ res_sig_wt <- res_sig_wt[!duplicated(res_sig_wt$ensembl),] 	
+ 
+ 
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+
+genes <- getBM(attributes=c('hgnc_symbol', 'ensembl_gene_id'), 
+      filters = 'ensembl_gene_id', 
+      values = res_sig_wt$ensembl, 
+      mart = mart)
+	  
+colnames(genes) <- c("hgnc_symbol", "ensembl")	
+
+res_sig_wt <- merge(genes, res_sig_wt, by="ensembl")  
+	  
+ res_sig_wt <- res_sig_wt[!duplicated(res_sig_wt$hgnc_symbol),] 	
+	  
+ res_sig_wt <- res_sig_wt %>%
+ 	arrange(padj)	  
+```
+
+###################### Data Visualisation ####################################
+
+```{r}
+rownames(res_sig_wt) <- res_sig_wt$ensembl
+
+sign_norm_counts_wt <- merge(res_sig_wt, normalized_counts, by=0)
+
+
+
+rownames(sign_norm_counts_wt) <- sign_norm_counts_wt$hgnc_symbol
+
+sign_norm_counts_wt <- sign_norm_counts_wt[,-c(1:9)]
+	  
+
+write.table(res_sig_wt, "res_sig_wt.txt", sep="\t", dec=",")
+
+pheatmap(sign_norm_counts_wt, 
+color= colorRampPalette(c("navy", "white", "red"))(100),
+		scale="row",
+        show_rownames=F,
+        show_colnames=F,
+	 annotation_col =  annotation,
+	 annotation_colors=anno_colors,
+ main="Heatmap of DEG",
+ cutree_cols=1,
+ cutree_rows=1
+		)	
+
+res_sig_wt$Entrez <- mapIds(org.Hs.eg.db, res_sig_wt$ensembl, 'ENTREZID', 'ENSEMBL')
+
+```
+################### Gene Set Enrichment Analysis ######################
+
+```{r}
+load("human_H_v5p2.rdata")
+pathwaysH <- Hs.H
+ranks <- res_sig_wt$log2FoldChange
+names(ranks) <- res_sig_wt$Entrez
+
+
+fgseaRes <- fgsea(pathwaysH, ranks, minSize=15, maxSize = 500, nperm=10000)
+
+head(fgseaRes[order(padj, -abs(NES)), ], n=20)
+
+res <- fgseaRes[order(fgseaRes$pval), ]
+
+res <- res[res$padj<.05,]
+
+res <- res[order(res$ES), ]
+res$pathway <- factor(res$pathway, levels=res$pathway)
+
+ggplot(data = res, aes(y=ES, x=pathway,  fill=ES)) +
+    geom_bar(stat="identity") + theme_classic() + 
+	scale_fill_gradient2(low="navy", mid="white", high="red") + 
+	xlab("Hallmark Gene Sets") + ylab("Enrichment Score")  + coord_flip() +
+	ggtitle("Pathways WT_MET after HGF") +
+	theme(
+	plot.title = element_text(size=14, face="bold.italic"),
+	axis.title.x = element_text(size=14, face="bold"),
+	axis.title.y = element_text(size=14, face="bold"),
+	axis.text.x = element_text(face="bold", size=12, angle=0),
+	axis.text.y = element_text(face="bold", size=12, angle=0) 
+	) 	
+	
+	
+	fgseaRes <- fgseaRes[order(fgseaRes$padj),]
+	
+	for(i in 1:length(fgseaRes)){
+		if(fgseaRes$padj[i]<=.05){
+			data <-  fgseaRes$leadingEdge[[i]]
+			data <- t(data)
+			data <- data.frame(Entrez=t(data), emt=t(data))
+			data <- merge(data, res_sig_wt, by="Entrez")
+		
+			data <- data[order(data$log2FoldChange),]
+			data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+			data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+				
+						
+					
+							p <- ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+			     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+				   ggtitle(paste(fgseaRes$pathway[[i]],  "(MET WT)")) + theme(legend.position = "none")
+							print(p)
+						 
+				
+					}
+					 else{break}
+	}	
+	
+	fgseaRes_WT <- fgseaRes
+	
+	data <-  fgseaRes$leadingEdge[[9]]
+	data <- t(data)
+	data <- data.frame(Entrez=t(data), emt=t(data))
+	data <- merge(data, res_sig_wt, by="Entrez")
+
+	data <- data[order(data$log2FoldChange),]
+	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+		   ggtitle(paste(fgseaRes$pathway[[9]],  "(MET WT)")) + theme(legend.position = "none")
+		   
+
+	   	data <-  fgseaRes$leadingEdge[[10]]
+	   	data <- t(data)
+	   	data <- data.frame(Entrez=t(data), emt=t(data))
+	   	data <- merge(data, res_sig_wt, by="Entrez")
+
+	   	data <- data[order(data$log2FoldChange),]
+	   	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	   	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+	   					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	   	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+	   		   ggtitle(paste(fgseaRes$pathway[[10]],  "(MET WT)")) + theme(legend.position = "none")		 
+```
+
+
+############################## KEGG ###########################################
+
+```{r}
+ search_kegg_organism('hsa', by='kegg_code')
+
+			   sigGenes_wt <- res_sig_wt$Entrez	
+			   
+			   kk_wt <- enrichKEGG(gene         = sigGenes_wt,
+			                    organism     = 'hsa',
+			                    pvalueCutoff = 0.05)
+								
+	kegg_res_wt <- data.frame(kk_wt@result[["Description"]], kk_wt@result[["ID"]], kk_wt@result[["p.adjust"]], kk_wt@result[["GeneRatio"]], kk_wt@result[["qvalue"]], kk_wt@result[["Count"]])
+
+colnames(kegg_res_wt) <-c("Description", "ID", "p.adjust", "GeneRatio", "qvalue", "Count")
+
+kegg_res_wt <- kegg_res_wt[kegg_res_wt$p.adjust<.05,]
+kegg_res_wt$log10 <- -log10(kegg_res_wt$p.adjust)
+
+kegg_res_wt <- kegg_res_wt[order(kegg_res_wt$log10),]
+kegg_res_wt$Description <- factor(kegg_res_wt$Description, levels=kegg_res_wt$Description)
+
+
+
+		ggplot(kegg_res_wt, aes_string(x='log10', y='Description', fill="Description")) +
+geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(kegg_res_wt$Description), direction=-1, option="C")) +
+  ggtitle("KEGG MET WT") + theme(legend.position = "none") + labs(x="-log10(adjusted pvalue)")	+
+theme(
+plot.title = element_text(size=14, face="bold.italic"),
+axis.title.x = element_text(size=14, face="bold"),
+axis.title.y = element_text(size=14, face="bold"),
+axis.text.x = element_text(face="bold", size=12, angle=0),
+axis.text.y = element_text(face="bold", size=12, angle=0) 
+) 
+```
+################################ ∆14 ###########################################
+
+```{r}
+sampleinfo_14 <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/sampleinfo_14.txt", sep="\t", dec=".", header=T)
+rownames(sampleinfo_14) <- sampleinfo_14$sampleid
+sampleinfo_14$timepoint <- fct_relevel(sampleinfo_14$timepoint, c("0h", "3h", "6h", "12h"))
+```
+
+####################################### Preparing ∆14 counts table ########################################################################
+
+```{r}
+counts_14 <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/delta14_counts.txt", sep="\t", dec=".", header=T)
+
+
+### Funny gene names merged with ensembl ids, separate them
+
+counts_14$ENSEMBL <- gsub(".*:", "", counts_14$X)
+counts_14$SYMBOL <- gsub(":.*", "", counts_14$X)
+
+counts_14Table <- counts_14[,c(10,2:9)]
+
+rownames(counts_14Table) <- counts_14Table$ENSEMBL
+counts_14Table <- counts_14Table[,-1]
+```
+
+################################## DESEQ2 ##############################
+
+```{r}
+# Check if design ok #
+all(rownames(sampleinfo_14) == colnames(counts_14Table))
+
+dds_raw <- DESeqDataSetFromMatrix(countData = counts_14Table,
+								colData=sampleinfo_14,
+								design=~ timepoint)
+```
+
+################################ NORMALIZATION ######################################
+
+```{r}
+dds_raw <- estimateSizeFactors(dds_raw)
+dds_raw <- estimateDispersions(dds_raw)
+dds_raw <- nbinomWaldTest(dds_raw)
+
+normalized_counts_14 <- counts(dds_raw, normalized = T)
+```
+
+##################### Unsupervised Clustering analysis ##########################
+# Variant stabilizing transformation, log transformation
+
+```{r}
+vsd <- vst(dds_raw, blind=T)
+#extract matrix
+vsd_mat <- assay(vsd)
+
+# pairwise correlation values
+vsd_cor <- cor(vsd_mat)
+
+annotation <- data.frame(sampleinfo_14$timepoint, sampleinfo_14$genotype)
+
+rownames(annotation) <- colnames(vsd_cor)
+colnames(annotation) <- c("Timepoint", "Genotype")
+
+Timepoint <- viridis(n=4, direction=-1, option="A")
+Genotype <- viridis(n=1, option="D")
+
+names(Timepoint) <- levels(as.factor(sampleinfo_14$timepoint))
+names(Genotype) <- levels(as.factor(sampleinfo_14$genotype))
+
+anno_colors <- list(Timepoint=Timepoint, Genotype=Genotype)
+
+		pheatmap(vsd_cor, annotation_col =  annotation, annotation_row=annotation, show_rownames =  F, show_colnames = F, 
+		         main="Correlation Heatmap after normalization", annotation_colors=anno_colors)
+				 
+				 
+plotPCA(vsd, intgroup="timepoint")
+```
+ ############################# RUN DESEQ2 ###############################################
+ 
+```{r}
+ dds <- DESeq(dds_raw)
+ plotDispEsts(dds)
+ 
+ res_14 <- results(dds,
+ 			alpha=.05,
+ 			lfcThreshold = .32
+ 			)
+
+ summary(res_14)
+
+ 
+ 
+ res_all_14 <- as.data.frame(res_14) 
+
+ # Select significant genese with padj < 0.1
+
+
+ res_sig_14 <- subset(res_all_14, padj < 0.1) %>%
+   				data.frame() %>%
+   				rownames_to_column(var = "ensembl")
+				
+ res_sig_14 <- res_sig_14 %>%
+ 	arrange(padj)
+
+ res_sig_14 <- res_sig_14[!duplicated(res_sig_14$ensembl),] 	
+ 
+ 
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+
+genes <- getBM(attributes=c('hgnc_symbol', 'ensembl_gene_id'), 
+      filters = 'ensembl_gene_id', 
+      values = res_sig_14$ensembl, 
+      mart = mart)
+	  
+colnames(genes) <- c("hgnc_symbol", "ensembl")	
+
+res_sig_14 <- merge(genes, res_sig_14, by="ensembl")  
+	  
+ res_sig_14 <- res_sig_14[!duplicated(res_sig_14$hgnc_symbol),] 	
+	  
+ res_sig_14 <- res_sig_14 %>%
+ 	arrange(padj)	 
+```
+  ###################### Data Visualisation ####################################
+  
+```{r}
+rownames(res_sig_14) <- res_sig_14$ensembl
+
+sign_norm_counts_14_14 <- merge(res_sig_14, normalized_counts_14, by=0)
+
+
+rownames(sign_norm_counts_14_14) <- sign_norm_counts_14_14$hgnc_symbol
+
+sign_norm_counts_14_14 <- sign_norm_counts_14_14[,-c(1:9)]
+	  
+
+
+pheatmap(sign_norm_counts_14_14, 
+color= colorRampPalette(c("navy", "white", "red"))(100),
+		scale="row",
+        show_rownames=F,
+        show_colnames=F,
+	 annotation_col =  annotation,
+	 annotation_colors=anno_colors,
+ main="Heatmap of DEG",
+ cutree_cols=1,
+ cutree_rows=3
+		)	
+
+res_sig_14$Entrez <- mapIds(org.Hs.eg.db, res_sig_14$ensembl, 'ENTREZID', 'ENSEMBL')
+
+ write.table(res_sig_14, "res_sig_14.txt", sep="\t", dec=",")
+ 
+
+```
+  ################### Gene Set Enrichment Analysis ######################
+```{r}
+ load("human_H_v5p2.rdata")
+pathwaysH <- Hs.H
+ranks <- res_sig_14$log2FoldChange
+names(ranks) <- res_sig_14$Entrez
+
+
+fgseaRes <- fgsea(pathwaysH, ranks, minSize=15, maxSize = 500, nperm=10000)
+
+head(fgseaRes[order(padj, -abs(NES)), ], n=20)
+
+res <- fgseaRes[order(fgseaRes$pval), ]
+
+res <- res[res$padj<.05,]
+
+res <- res[order(res$ES), ]
+res$pathway <- factor(res$pathway, levels=res$pathway)
+
+ggplot(data = res, aes(y=ES, x=pathway,  fill=ES)) +
+    geom_bar(stat="identity") + theme_classic() + 
+	scale_fill_gradient2(low="navy", mid="white", high="red") + 
+	xlab("Hallmark Gene Sets") + ylab("Enrichment Score")  + coord_flip() +
+	ggtitle("Pathways METExon∆14 after HGF") +
+	theme(
+	plot.title = element_text(size=14, face="bold.italic"),
+	axis.title.x = element_text(size=14, face="bold"),
+	axis.title.y = element_text(size=14, face="bold"),
+	axis.text.x = element_text(face="bold", size=12, angle=0),
+	axis.text.y = element_text(face="bold", size=12, angle=0) 
+	) 	
+
+	fgseaRes <- fgseaRes[order(fgseaRes$padj),]
+	
+	
+	fgseaRes_14 <- fgseaRes
+	
+	for(i in 1:length(fgseaRes)){
+		if(fgseaRes$padj[i]<=.05){
+			data <-  fgseaRes$leadingEdge[[i]]
+			data <- t(data)
+			data <- data.frame(Entrez=t(data), emt=t(data))
+			data <- merge(data, res_sig_14, by="Entrez")
+		
+			data <- data[order(data$log2FoldChange),]
+			data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+			data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+				
+						
+					
+							p <- ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+			     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+				   ggtitle(paste(fgseaRes$pathway[[i]],  "(METExon∆14)")) + theme(legend.position = "none")
+							print(p)
+						 
+				
+					}
+					 else{break}
+	}	
+	
+	
+	data <-  fgseaRes$leadingEdge[[9]]
+	data <- t(data)
+	data <- data.frame(Entrez=t(data), emt=t(data))
+	data <- merge(data, res_sig_14, by="Entrez")
+
+	data <- data[order(data$log2FoldChange),]
+	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+		   ggtitle(paste(fgseaRes$pathway[[9]],  "(METExon∆14)")) + theme(legend.position = "none")
+
+
+	   	data <-  fgseaRes$leadingEdge[[10]]
+	   	data <- t(data)
+	   	data <- data.frame(Entrez=t(data), emt=t(data))
+	   	data <- merge(data, res_sig_14, by="Entrez")
+
+	   	data <- data[order(data$log2FoldChange),]
+	   	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	   	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+	   					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	   	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+	   		   ggtitle(paste(fgseaRes$pathway[[10]],  "(METExon∆14)")) + theme(legend.position = "none")
+	   	   
+		   
+		   	data <-  fgseaRes$leadingEdge[[11]]
+	   	   	data <- t(data)
+	   	   	data <- data.frame(Entrez=t(data), emt=t(data))
+	   	   	data <- merge(data, res_sig_14, by="Entrez")
+
+	   	   	data <- data[order(data$log2FoldChange),]
+	   	   	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	   	   	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+	   	   					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	   	   	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+	   	   		   ggtitle(paste(fgseaRes$pathway[[11]],  "(METExon∆14)")) + theme(legend.position = "none")
+				   
+				   
+				   
+	   		   	data <-  fgseaRes$leadingEdge[[12]]
+	   	   	   	data <- t(data)
+	   	   	   	data <- data.frame(Entrez=t(data), emt=t(data))
+	   	   	   	data <- merge(data, res_sig_14, by="Entrez")
+
+	   	   	   	data <- data[order(data$log2FoldChange),]
+	   	   	   	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	   	   	   	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+	   	   	   					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	   	   	   	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+	   	   	   		   ggtitle(paste(fgseaRes$pathway[[12]],  "(METExon∆14)")) + theme(legend.position = "none")
+					   
+					   
+					   
+					   
+	   	   		   	data <-  fgseaRes$leadingEdge[[13]]
+	   	   	   	   	data <- t(data)
+	   	   	   	   	data <- data.frame(Entrez=t(data), emt=t(data))
+	   	   	   	   	data <- merge(data, res_sig_14, by="Entrez")
+
+	   	   	   	   	data <- data[order(data$log2FoldChange),]
+	   	   	   	   	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	   	   	   	   	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+	   	   	   	   					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	   	   	   	   	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+	   	   	   	   		   ggtitle(paste(fgseaRes$pathway[[13]],  "(METExon∆14)")) + theme(legend.position = "none")
+						   
+						   
+						   
+	   	   	   		   	data <-  fgseaRes$leadingEdge[[14]]
+	   	   	   	   	   	data <- t(data)
+	   	   	   	   	   	data <- data.frame(Entrez=t(data), emt=t(data))
+	   	   	   	   	   	data <- merge(data, res_sig_14, by="Entrez")
+
+	   	   	   	   	   	data <- data[order(data$log2FoldChange),]
+	   	   	   	   	   	data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+	   	   	   	   	   	data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+		
+				
+			
+	   	   	   	   	   					ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+	   	   	   	   	   	     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+	   	   	   	   	   		   ggtitle(paste(fgseaRes$pathway[[14]],  "(METExon∆14)")) + theme(legend.position = "none")			   			   	
+```
+################## KEGG ######################
+
+```{r}
+   search_kegg_organism('hsa', by='kegg_code')
+
+							   sigGenes_14 <- res_sig_14$Entrez	
+			   
+							   kk_14 <- enrichKEGG(gene         = sigGenes_14,
+							                    organism     = 'hsa',
+							                    pvalueCutoff = 0.05)
+								
+					kegg_res_14 <- data.frame(kk_14@result[["Description"]], kk_14@result[["ID"]], kk_14@result[["p.adjust"]], kk_14@result[["GeneRatio"]], kk_14@result[["qvalue"]], kk_14@result[["Count"]])
+
+				colnames(kegg_res_14) <-c("Description", "ID", "p.adjust", "GeneRatio", "qvalue", "Count")
+
+				kegg_res_14 <- kegg_res_14[kegg_res_14$p.adjust<.05,]
+				kegg_res_14$log10 <- -log10(kegg_res_14$p.adjust)
+
+				kegg_res_14 <- kegg_res_14[order(kegg_res_14$log10),]
+				kegg_res_14$Description <- factor(kegg_res_14$Description, levels=kegg_res_14$Description)
+
+
+
+						ggplot(kegg_res_14, aes_string(x='log10', y='Description', fill="Description")) +
+				geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(kegg_res_14$Description), direction=-1, option="C")) +
+				  ggtitle("KEGG MET Exon∆14") + theme(legend.position = "none") + labs(x="-log10(adjusted pvalue)")	+
+theme(
+plot.title = element_text(size=14, face="bold.italic"),
+axis.title.x = element_text(size=14, face="bold"),
+axis.title.y = element_text(size=14, face="bold"),
+axis.text.x = element_text(face="bold", size=12, angle=0),
+axis.text.y = element_text(face="bold", size=12, angle=0) 
+) 
+  
+```
+################################ WT Amp ###########################################
+
+####################################### Create sample info file with genotype and timpoints (h) #######################################
+
+```{r}
+sampleinfo_amp <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/sampleinfo_Amp.txt", sep="\t", dec=".", header=T)
+rownames(sampleinfo_amp) <- sampleinfo_amp$sampleid
+sampleinfo_amp$timepoint <- fct_relevel(sampleinfo_amp$timepoint, c("0h", "3h", "6h", "12h"))
+```
+
+####################################### Preparing counts table ########################################################################
+
+```{r}
+counts_amp <- read.table("https://raw.githubusercontent.com/Altintas-D/MET-14-promotes-a-ligand-dependent-AKT-driven-invasive-growth/Figure_2D-F_RNAseq/wtamp_counts.txt", sep="\t", dec=".", header=T)
+
+
+### Funny gene names merged with ensembl ids, separate them
+
+counts_amp$ENSEMBL <- gsub(".*:", "", counts_amp$X)
+counts_amp$SYMBOL <- gsub(":.*", "", counts_amp$X)
+
+counts_ampTable <- counts_amp[,c(10,2:9)]
+
+rownames(counts_ampTable) <- counts_ampTable$ENSEMBL
+counts_ampTable <- counts_ampTable[,-1]
+
+```
+
+################################## DESEQ2 ##############################
+
+```{r}
+# Check if design ok #
+all(rownames(sampleinfo_amp) == colnames(counts_ampTable))
+
+dds_raw <- DESeqDataSetFromMatrix(countData = counts_ampTable,
+								colData=sampleinfo_amp,
+								design=~ timepoint)
+```
+
+################################ NORMALIZATION ######################################
+
+```{r}
+dds_raw <- estimateSizeFactors(dds_raw)
+dds_raw <- estimateDispersions(dds_raw)
+dds_raw <- nbinomWaldTest(dds_raw)
+
+normalized_counts_amp <- counts(dds_raw, normalized = T)
+```
+
+##################### Unsupervised Clustering analysis ##########################
+# Variant stabilizing transformation, log transformation
+
+```{r}
+vsd <- vst(dds_raw, blind=T)
+#extract matrix
+vsd_mat <- assay(vsd)
+
+# pairwise correlation values
+vsd_cor <- cor(vsd_mat)
+
+annotation <- data.frame(sampleinfo_amp$timepoint, sampleinfo_amp$genotype)
+
+rownames(annotation) <- colnames(vsd_cor)
+colnames(annotation) <- c("Timepoint", "Genotype")
+
+Timepoint <- viridis(n=4, direction=-1, option="A")
+Genotype <- viridis(n=1, option="D")
+
+names(Timepoint) <- levels(as.factor(sampleinfo_amp$timepoint))
+names(Genotype) <- levels(as.factor(sampleinfo_amp$genotype))
+
+anno_colors <- list(Timepoint=Timepoint, Genotype=Genotype)
+
+		pheatmap(vsd_cor, annotation_col =  annotation, annotation_row=annotation, show_rownames =  F, show_colnames = F, 
+		         main="Correlation Heatmap after normalization", annotation_colors=anno_colors)
+				 
+				 
+plotPCA(vsd, intgroup="timepoint")
+
+```
+############################# RUN DESEQ2 ###############################################
+
+```{r}
+ dds <- DESeq(dds_raw)
+ plotDispEsts(dds)
+ 
+ res_amp <- results(dds,
+ 			alpha=.05,
+ 			lfcThreshold = .32
+ 			)
+
+ summary(res_amp)
+
+ 
+ 
+ res_all_amp <- as.data.frame(res_amp) 
+
+ # Select significant genese with padj < 0.1
+
+
+ res_sig_amp <- subset(res_all_amp, padj < 0.1) %>%
+   				data.frame() %>%
+   				rownames_to_column(var = "ensembl")
+				
+ res_sig_amp <- res_sig_amp %>%
+ 	arrange(padj)
+
+ res_sig_amp <- res_sig_amp[!duplicated(res_sig_amp$ensembl),] 	
+ 
+ 
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+
+genes <- getBM(attributes=c('hgnc_symbol', 'ensembl_gene_id'), 
+      filters = 'ensembl_gene_id', 
+      values = res_sig_amp$ensembl, 
+      mart = mart)
+	  
+colnames(genes) <- c("hgnc_symbol", "ensembl")	
+
+res_sig_amp <- merge(genes, res_sig_amp, by="ensembl")  
+	  
+ res_sig_amp <- res_sig_amp[!duplicated(res_sig_amp$hgnc_symbol),] 	
+	  
+ res_sig_amp <- res_sig_amp %>%
+ 	arrange(padj)	  
+```
+
+ ###################### Data Visualisation ####################################
+
+```{r}
+rownames(res_sig_amp) <- res_sig_amp$ensembl
+
+	  
+sign_norm_counts_amp_amp <- merge(res_sig_amp, normalized_counts_amp, by=0)
+
+
+rownames(sign_norm_counts_amp_amp) <- sign_norm_counts_amp_amp$hgnc_symbol
+
+sign_norm_counts_amp_amp <- sign_norm_counts_amp_amp[,-c(1:9)]
+	  
+
+
+pheatmap(sign_norm_counts_amp_amp, 
+color= colorRampPalette(c("navy", "white", "red"))(100),
+		scale="row",
+        show_rownames=F,
+        show_colnames=F,
+	 annotation_col =  annotation,
+	 annotation_colors=anno_colors,
+ main="Heatmap of DEG",
+ cutree_cols=1,
+ cutree_rows=2
+		)	
+
+res_sig_amp$Entrez <- mapIds(org.Hs.eg.db, res_sig_amp$ensembl, 'ENTREZID', 'ENSEMBL')
+```
+  ################### Gene Set Enrichment Analysis ######################
+
+```{r}
+load("human_H_v5p2.rdata")
+pathwaysH <- Hs.H
+ranks <- res_sig_amp$log2FoldChange
+names(ranks) <- res_sig_amp$Entrez
+
+
+fgseaRes <- fgsea(pathwaysH, ranks, minSize=15, maxSize = 500, nperm=10000)
+
+head(fgseaRes[order(padj, -abs(NES)), ], n=20)
+
+res <- fgseaRes[order(fgseaRes$pval), ]
+
+res <- res[res$padj<.05,]
+
+res <- res[order(res$ES), ]
+res$pathway <- factor(res$pathway, levels=res$pathway)
+
+ggplot(data = res, aes(y=ES, x=pathway,  fill=ES)) +
+    geom_bar(stat="identity") + theme_classic() + 
+	scale_fill_gradient2(low="navy", mid="white", high="red") + 
+	xlab("Hallmark Gene Sets") + ylab("Enrichment Score")  + coord_flip() +
+	ggtitle("Pathways WT_MET_Amp after HGF") +
+	theme(
+	plot.title = element_text(size=14, face="bold.italic"),
+	axis.title.x = element_text(size=14, face="bold"),
+	axis.title.y = element_text(size=14, face="bold"),
+	axis.text.x = element_text(face="bold", size=12, angle=0),
+	axis.text.y = element_text(face="bold", size=12, angle=0) 
+	) 	
+	
+	
+	fgseaRes <- fgseaRes[order(fgseaRes$padj),]
+	
+	fgseaRes_Amp <- fgseaRes
+	
+	for(i in 1:length(fgseaRes)){
+		if(fgseaRes$padj[i]<=.05){
+			data <-  fgseaRes$leadingEdge[[i]]
+			data <- t(data)
+			data <- data.frame(Entrez=t(data), emt=t(data))
+			data <- merge(data, res_sig_amp, by="Entrez")
+		
+			data <- data[order(data$log2FoldChange),]
+			data$hgnc_symbol <- factor(data$hgnc_symbol, levels=data$hgnc_symbol)
+			data$signif <- ifelse(data$padj < .05, "Significant", "ns")
+				
+						
+					
+							p <- ggplot(data, aes_string(x='log2FoldChange', y='hgnc_symbol', fill="hgnc_symbol")) +
+			     geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(data$hgnc_symbol), direction=-1)) +
+				   ggtitle(paste(fgseaRes$pathway[[i]],  "(WT MET Amp)")) + theme(legend.position = "none")
+							print(p)
+						 
+				
+					}
+					 else{break}
+	}
+	
+```
+
+############################## KEGG ##################################
+
+```{r}
+	   search_kegg_organism('hsa', by='kegg_code')
+
+			   sigGenes_amp <- res_sig_amp$Entrez	
+
+			   kk_amp <- enrichKEGG(gene         = sigGenes_amp,
+			                    organism     = 'hsa',
+			                    pvalueCutoff = 0.05)
+				
+	kegg_res_amp <- data.frame(kk_amp@result[["Description"]], kk_amp@result[["ID"]], kk_amp@result[["p.adjust"]], kk_amp@result[["GeneRatio"]], kk_amp@result[["qvalue"]], kk_amp@result[["Count"]])
+
+colnames(kegg_res_amp) <-c("Description", "ID", "p.adjust", "GeneRatio", "qvalue", "Count")
+
+kegg_res_amp <- kegg_res_amp[kegg_res_amp$p.adjust<.05,]
+kegg_res_amp$log10 <- -log10(kegg_res_amp$p.adjust)
+
+kegg_res_amp <- kegg_res_amp[order(kegg_res_amp$log10),]
+kegg_res_amp$Description <- factor(kegg_res_amp$Description, levels=kegg_res_amp$Description)
+
+
+
+		ggplot(kegg_res_amp, aes_string(x='log10', y='Description', fill="Description")) +
+geom_bar(stat="identity") + theme_classic() + scale_fill_manual(values=viridis(n=length(kegg_res_amp$Description), direction=-1, option="C")) +
+  ggtitle("KEGG MET WT Amp") + theme(legend.position = "none") + labs(x="-log10(adjusted pvalue)")	+
+theme(
+plot.title = element_text(size=14, face="bold.italic"),
+axis.title.x = element_text(size=14, face="bold"),
+axis.title.y = element_text(size=14, face="bold"),
+axis.text.x = element_text(face="bold", size=12, angle=0),
+axis.text.y = element_text(face="bold", size=12, angle=0) 
+) 
+```
+######################################## Comparison of 3 datasets #########################################
+
+```{r}
+set <- list(WT=rownames(sign_norm_counts_wt),
+            MET_Ex14=rownames(sign_norm_counts_14_14),
+            MET_WT_Amp=rownames(sign_norm_counts_amp_amp))
+			
+			
+			ggvenn(
+			    set, 
+			    fill_color = c("#0073C2FF", "#CD534CFF", "#EFC000FF"),
+			    stroke_size = 0.5, set_name_size = 8, set_name_color=c("#0073C2FF", "#CD534CFF", "#EFC000FF")
+			)
+```
+
+########## Comparative Gene Set Enrichment analysis #############
+
+```{r}
+fgseaRes_WT$Group <- "MET_WT"
+fgseaRes_WT_sig <- fgseaRes_WT[fgseaRes_WT$padj<=.05,]
+fgseaRes_14$Group <- "MET_∆Exon14"
+fgseaRes_14_sig <- fgseaRes_14[fgseaRes_14$padj<=.05,]
+fgseaRes_Amp$Group <- "MET_WT_Amp"
+fgseaRes_Amp_sig <- fgseaRes_Amp[fgseaRes_Amp$padj<=.05,]
+
+
+	fgseaRes_14 <- fgseaRes_14[order(fgseaRes_14$NES),]
+
+
+
+
+	#data <- data[order(data$NES),]
+
+fgseaRes_14_sig %>%
+  arrange(NES) %>%
+   mutate(pathway=factor(pathway, levels=pathway))
+   
+   data <-rbind(fgseaRes_WT_sig, fgseaRes_14_sig, fgseaRes_Amp_sig)
+   
+   data <- data[order(NES,Group),]
+   
+ggplot(data, aes(x=Group, y=pathway, size=-log10(padj), color=NES, group=Group)) + 
+geom_point(alpha = 0.8) + 
+theme_minimal() + 
+scale_color_gradient(low = "blue",  high = "red2", space = "Lab") + 
+ggtitle("Significantly Enriched Pathways") + xlab("MET Status") + ylab("Pathways") + 
+theme(
+plot.title = element_text(color="black", size=18, face="bold.italic"),
+axis.title.x = element_text(color="black", size=16, face="bold"),
+axis.title.y = element_text(color="black", size=16, face="bold")
+) + theme(legend.position="top", legend.background = element_rect(fill = "lightgray")) +
+guides(colour = guide_colourbar(order = 1, labs(fill = "Enrichment score")),
+         size = guide_legend(order = 2), labs(fill = "-log10(Adjusted p-value)")) +  
+theme(axis.text.x = element_text(face="bold", color="black", 
+                           size=12, angle=90),
+          axis.text.y = element_text(face="bold", color="black", 
+                           size=12, angle=0))
+```
+
+########## Comparative KEGG analysis #############
+
+```{r}
+kegg_res_wt$Group <- "MET_WT"
+kegg_res_14$Group <- "MET_∆Exon14"
+kegg_res_amp$Group <- "MET_WT_Amp"
+
+kegg_res_14 %>%
+  arrange(p.adjust) %>%
+  mutate(Description=factor(Description, levels=Description))
+  
+
+data <- rbind(kegg_res_wt, kegg_res_14, kegg_res_amp)
+
+data <- data %>%
+  mutate(Group=as.factor(Group)) 
+
+data$Group <- factor(data$Group, levels=c("MET_WT", "MET_∆Exon14", "MET_WT_Amp"))
+
+  ggplot(data, aes(x=Group, y=Description, size=-log10(p.adjust), color=Group, group=Group)) + 
+geom_point(alpha = 0.8) + 
+theme_minimal() + 
+scale_color_manual(values=viridis(n=3, alpha=.8, option="C", direction=-1)) +
+    ggtitle("Significantly Enriched KEGG Pathways") + xlab("MET Status") + ylab("Pathways") + 
+theme(
+plot.title = element_text(color="black", size=18, face="bold.italic"),
+axis.title.x = element_text(color="black", size=16, face="bold"),
+axis.title.y = element_text(color="black", size=16, face="bold")
+) + theme(legend.position="top", legend.background = element_rect(fill = "lightgray")) +
+guides(color="none",
+  size = guide_legend(order = 2), labs(fill = "-log10(Adjusted p-value)")) +  
+theme(axis.text.x = element_text(face="bold", color="black", 
+                           size=12, angle=90),
+          axis.text.y = element_text(face="bold", color="black", 
+                           size=12, angle=0))
+
+
+
+   
+
+```
+
+
+
+
+
+
